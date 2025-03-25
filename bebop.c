@@ -24,6 +24,11 @@ void add_window(Window w) {
     XGetWindowAttributes(display, w, &wa);
 
     Client *c = malloc(sizeof(Client));
+    if (!c) {
+        fprintf(stderr, "Failed to allocate client\n");
+        return;
+    }
+
     c->win = w;
     c->x = wa.x;
     c->y = wa.y;
@@ -48,21 +53,38 @@ void remove_window(Window w) {
    }
 }
 
+void cleanup() {
+    for (int i = 0; i < num_clients; i++) {
+        free(clients[i]);
+        XCloseDisplay(display);
+    }
+}
+
+void focus_window(Window w) {
+    XSetInputFocus(display, w, RevertToPointerRoot, CurrentTime);
+    XRaiseWindow(display, w);
+}
+
 void tile_windows() {
     if (num_clients == 0) return;
 
     int screen_width = DisplayWidth(display, DefaultScreen(display));
     int screen_height = DisplayHeight(display, DefaultScreen(display));
-    int w_per_win = screen_width / num_clients;
 
-    for (int i =0; i < num_clients; i++) {
-        clients[i]->x = i * w_per_win;
-        clients[i]->y = 0;
-        clients[i]->w = w_per_win;
-        clients[i]->h = screen_height;
-        XMoveResizeWindow(display, clients[i]->win, clients[i]->x, clients[i]->y,
-            clients[i]->w, clients[i]->h);
+    if (num_clients == 1) {
+        XMoveResizeWindow(display, clients[0]->win, 0, 0, screen_width, screen_height);
+        return;
     }
+
+    int master_width = screen_width / 2;
+    int stack_height = screen_height / (num_clients - 1);
+    XMoveResizeWindow(display, clients[0]->win, 0, 0, master_width, screen_height);
+
+    for (int i = 1; i < num_clients; i++) {
+        XMoveResizeWindow(display, clients[i]->win, master_width, (i - 1) * stack_height,
+            master_width, stack_height);
+    }
+
 }
 
 void spawn(const char *cmd) {
@@ -77,9 +99,12 @@ void handle_keypress(XKeyEvent *e) {
     if (keysym == XK_q && (e->state & ControlMask)) {
         XCloseDisplay(display);
         exit(0);
-    } else if (keysym == XK_Return && (e->state & Mod4Mask)) {
+    } else if (keysym == XK_q && (e->state & Mod4Mask)) {
         spawn("kitty");
+    } else if (keysym == XK_Return && (e->state & Mod4Mask)) {
+        spawn("firefox");
     }
+
 }
 
 void handle_configure_request(XConfigureRequestEvent *e) {
@@ -106,6 +131,7 @@ int main() {
     root = DefaultRootWindow(display);
     XSelectInput(display, root, SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), ControlMask, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_Return), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
 
     XEvent ev;
