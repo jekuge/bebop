@@ -16,6 +16,7 @@ Display *display;
 Window root;
 Client *clients[MAX_WINDOWS];
 int num_clients = 0;
+int focused = -1;
 
 void add_window(Window w) {
     if (num_clients >= MAX_WINDOWS) return;
@@ -35,9 +36,16 @@ void add_window(Window w) {
     c->w = wa.width;
     c->h = wa.height;
 
+
     clients[num_clients++] = c;
     XSelectInput(display, w, EnterWindowMask | FocusChangeMask);
     XMapWindow(display, w);
+
+    if (focused == -1 && num_clients == 1) {
+        focused = 0;
+        XSetInputFocus(display, w, RevertToPointerRoot, CurrentTime);
+        XRaiseWindow(display, w);
+    }
 }
 
 void remove_window(Window w) {
@@ -48,6 +56,15 @@ void remove_window(Window w) {
                 clients[j] = clients[j + 1];
             }
             num_clients--;
+            if (focused == i) {
+                focused = (num_clients > 0) ? (i > 0 ? i - 1 : 0) : -1;
+                if (focused >= 0) {
+                    XSetInputFocus(display, clients[focused]->win, RevertToPointerRoot, CurrentTime);
+                    XRaiseWindow(display, clients[focused]->win);
+                }
+            } else if (focused > 1) {
+                focused--;
+            }
             break;
         }
    }
@@ -60,10 +77,6 @@ void cleanup() {
     }
 }
 
-void focus_window(Window w) {
-    XSetInputFocus(display, w, RevertToPointerRoot, CurrentTime);
-    XRaiseWindow(display, w);
-}
 
 void tile_windows() {
     if (num_clients == 0) return;
@@ -103,6 +116,18 @@ void handle_keypress(XKeyEvent *e) {
         spawn("kitty");
     } else if (keysym == XK_Return && (e->state & Mod4Mask)) {
         spawn("firefox");
+    } else if(keysym == XK_Tab && (e->state & Mod4Mask) && !(e->state & ShiftMask)) {
+        if (num_clients > 1) {
+            focused = (focused + 1) % num_clients;
+            XSetInputFocus(display, clients[focused]->win, RevertToPointerRoot, CurrentTime);
+            XRaiseWindow(display, clients[focused]->win);
+        }
+    } else if(keysym == XK_Tab && (e->state & Mod4Mask) && (e->state & ShiftMask)) {
+        if (num_clients > 1) {
+            focused = (focused - 1 < 0) ? num_clients - 1: focused - 1;
+            XSetInputFocus(display, clients[focused]->win, RevertToPointerRoot, CurrentTime);
+            XRaiseWindow(display, clients[focused]->win);
+        }
     }
 
 }
@@ -132,6 +157,8 @@ int main() {
     XSelectInput(display, root, SubstructureRedirectMask | SubstructureNotifyMask | KeyPressMask);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), ControlMask, root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_q), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_Tab), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
+    XGrabKey(display, XKeysymToKeycode(display, XK_Tab), Mod4Mask | ShiftMask, root, True, GrabModeAsync, GrabModeAsync);
     XGrabKey(display, XKeysymToKeycode(display, XK_Return), Mod4Mask, root, True, GrabModeAsync, GrabModeAsync);
 
     XEvent ev;
